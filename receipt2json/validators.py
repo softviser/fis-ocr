@@ -108,6 +108,10 @@ def groundedness_check(doc: dict, ocr_text: str) -> tuple[list[str], bool]:
     if not ocr_text or len(ocr_text.strip()) < 40:
         return (["OCR metni çok kısa/boş; çıktı güvenilmez"], True)
 
+    lines = [ln.strip() for ln in ocr_text.splitlines() if ln.strip()]
+    if len(lines) >= 10 and len(set(lines)) / len(lines) < 0.3:
+        return (["OCR çıktısı bozuk (tekrar döngüsü); çıktı güvenilmez"], True)
+
     ocr_digits = _digits_only(ocr_text)
     upper = ocr_text.upper()
 
@@ -131,14 +135,16 @@ def groundedness_check(doc: dict, ocr_text: str) -> tuple[list[str], bool]:
         warnings.append(f"vendor_name='{doc.get('vendor_name')}' OCR metninde yok")
         suspect = True
 
-    # Aynı karede birden fazla fiş işareti
+    # Aynı karede birden fazla fiş işareti.
+    # Not: TARİH tek başına ölçüt değildir — fiş + banka slibi aynı kağıtta
+    # basıldığında 2 TARİH olması normaldir. TOPLAM ise fiş başına bir kez
+    # geçer (slipte TUTAR yazar).
     toplam_count = len(re.findall(r"TOPLAM", upper))
-    tarih_count = len(re.findall(r"TAR[İI]H", upper))
-    if toplam_count >= 2 or tarih_count >= 2:
+    if toplam_count >= 2:
         warnings.append(
-            f"Görselde birden fazla fiş olabilir (TOPLAM x{toplam_count}, "
-            f"TARİH x{tarih_count}); alanlar karışmış olabilir — görseli tek fiş "
-            "olacak şekilde bölüp tekrar deneyin"
+            f"Görselde birden fazla fiş olabilir (TOPLAM x{toplam_count}); "
+            "alanlar karışmış olabilir — görseli tek fiş olacak şekilde "
+            "bölüp tekrar deneyin"
         )
         suspect = True
 

@@ -52,6 +52,9 @@ required + nullable tanımlıdır.)
 - **Topraklama kontrolü**: modelin yazdığı kritik değerler (vergi no, fiş no,
   onay kodu, kart son4, toplamlar, firma adı) OCR metninde gerçekten geçmiyorsa
   `_suspect: true` + alan alan `_warnings`
+- **Otomatik kurtarma**: OCR modeli bozuk çıktı üretirse (tekrar döngüsü,
+  rakamsız metin) `fallback_ocr_model` ile yeniden okunur; yapılandırma modeli
+  OCR metnini yok sayıp uydurma üretirse aynı metinle bir kez daha denenir
 - Tarih/saat/kart-son4 normalizasyonu, TR sayı formatı (`3.940,00` → `3940.0`)
 - `data/vendors.json` ile kayıtlı firma eşleştirme → `_tax_check`
   (sağlaması bozuk numarada 1 karakter farklı kayıtlı VKN önerilir)
@@ -118,6 +121,7 @@ Tüm ayarlar proje kökündeki **`config.json`** dosyasından okunur
 {
     "ollama_host": "http://127.0.0.1:11434",
     "ocr_model": "deepseek-ocr:latest",
+    "fallback_ocr_model": "minicpm-v4.5:latest",
     "structure_model": "qwen3-coder:30b",
     "vision_model": "llama3.2-vision:latest",
     "max_upload_mb": 20,

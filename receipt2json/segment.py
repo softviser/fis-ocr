@@ -1,27 +1,19 @@
-"""Çok fişli görseli tek tek fişlere bölme.
+"""Çok fişli görseli tek tek fişlere bölme (saf Pillow + Python).
 
-İki uygulama:
-  1. OpenCV (kuruluysa tercih edilir) — kontur tabanlı
-  2. Pillow + saf Python (geri düşüş) — Otsu eşikleme + bağlı bileşen analizi
+Yöntem: Otsu eşikleme -> polarite seçimi (arka plan, görüntü kenarına dokunan
+çoğunluk sınıfıdır; fişler diğer sınıf) -> fiş maskesinde bağlı bileşen
+analizi -> bulunamazsa asimetrik genleşme (dikeyde güçlü/yatayda zayıf) ile
+yazı bloklarını fiş sütunlarına birleştirme -> alt alta blokları tek fişte
+toplama (fiskal kısım + banka slibi aynı kağıttadır).
 
-İkisi de yoksa görsel tek parça döner; pipeline bozulmaz (çok fişli kareler
-groundedness kontrolünde `_suspect` olarak işaretlenir).
-
-Varsayım: fişler açık renkli (beyaz kağıt), arka plan daha koyu.
+Pillow kurulu değilse görsel tek parça döner; pipeline bozulmaz (çok fişli
+kareler groundedness kontrolünde `_suspect` olarak işaretlenir).
 """
 import logging
 import os
 import tempfile
 
 log = logging.getLogger("receipt2json.segment")
-
-try:
-    import cv2
-    import numpy as np
-
-    HAS_CV2 = True
-except ImportError:
-    HAS_CV2 = False
 
 try:
     from PIL import Image
@@ -40,13 +32,10 @@ def split_receipts(image_path: str, out_dir: str | None = None) -> list[str]:
 
     0 veya 1 bölge bulunursa orijinal yol tek elemanlı liste olarak döner.
     """
-    if HAS_CV2:
-        boxes, size = _boxes_cv2(image_path)
-    elif HAS_PIL:
-        boxes, size = _boxes_pil(image_path)
-    else:
+    if not HAS_PIL:
         return [image_path]
 
+    boxes, size = _boxes_pil(image_path)
     if len(boxes) <= 1:
         return [image_path]
 
@@ -57,45 +46,17 @@ def split_receipts(image_path: str, out_dir: str | None = None) -> list[str]:
     w, h = size
 
     paths = []
+    im = Image.open(image_path)
     for i, (x0, y0, x1, y1) in enumerate(boxes, 1):
-        x0 = max(0, x0 - MARGIN)
-        y0 = max(0, y0 - MARGIN)
-        x1 = min(w, x1 + MARGIN)
-        y1 = min(h, y1 + MARGIN)
+        box = (max(0, x0 - MARGIN), max(0, y0 - MARGIN),
+               min(w, x1 + MARGIN), min(h, y1 + MARGIN))
         dest = os.path.join(out_dir, f"{base}_fis{i}.png")
-        _crop_save(image_path, (x0, y0, x1, y1), dest)
+        im.crop(box).save(dest)
         paths.append(dest)
 
     log.info("%s -> %d fiş bölgesi", image_path, len(paths))
     return paths
 
-
-# ---------------------------------------------------------------- OpenCV yolu
-
-def _boxes_cv2(image_path: str):
-    img = cv2.imread(image_path)
-    if img is None:
-        return [], (0, 0)
-    h, w = img.shape[:2]
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (7, 7), 0)
-    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 25))
-    closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    boxes = []
-    for c in contours:
-        x, y, bw, bh = cv2.boundingRect(c)
-        if (bw * bh) / (w * h) >= MIN_AREA_RATIO and bh / max(bw, 1) >= MIN_ASPECT:
-            boxes.append((x, y, x + bw, y + bh))
-    return boxes, (w, h)
-
-
-# ---------------------------------------------------------------- Pillow yolu
-#
-# Yöntem: Otsu eşikleme -> polarite seçimi (arka plan, görüntü kenarına dokunan
-# çoğunluk sınıfıdır; fişler diğer sınıf) -> fiş maskesinde bağlı bileşen
-# analizi -> büyük, fiş biçimli bileşenlerin bbox'ları.
 
 def _boxes_pil(image_path: str, work_width: int = 300):
     im = Image.open(image_path).convert("L")
@@ -118,6 +79,7 @@ def _boxes_pil(image_path: str, work_width: int = 300):
     bg_is_dark = sum(border) * 2 > len(border)
     mask = [1 - v for v in dark] if bg_is_dark else dark
 
+    # Faz A: fiş gövdeleri (kağıt arka plandan ayrışıyorsa) doğrudan bulunur
     boxes = _filter_components(_components(mask, sw, sh), sw, sh, min_fill=0.45)
 
     if len(boxes) < 2:
@@ -135,6 +97,10 @@ def _boxes_pil(image_path: str, work_width: int = 300):
             )
             if len(boxes_b) > len(best):
                 best = boxes_b
+        if len(best) >= 2:
+            # Aynı sütunda ALT ALTA duran bloklar tek fiştir (fiskal kısım +
+            # banka slibi); yan yana veya iç içe olanlar ayrı kalır
+            best = _merge_stacked(best)
         if len(best) >= 2:
             # Her kutuyu kendi x-aralığındaki TÜM yazı satırlarını kapsayacak
             # şekilde dikeyde genişlet (POS slibi gibi alt bölümler genleşmede
@@ -162,6 +128,36 @@ def _filter_components(comps, sw, sh, min_fill: float):
     return boxes
 
 
+def _merge_stacked(boxes):
+    """Alt alta duran kutuları birleştir: x-aralıkları büyük oranda örtüşen
+    AMA y-aralıkları ayrık olan kutular aynı fişin bölümleridir.
+
+    (y'leri de örtüşenler iç içe/karışık kutulardır; onlara dokunulmaz.)
+    """
+    boxes = list(boxes)
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                ax0, ay0, ax1, ay1 = boxes[i]
+                bx0, by0, bx1, by1 = boxes[j]
+                x_overlap = min(ax1, bx1) - max(ax0, bx0)
+                min_w = min(ax1 - ax0, bx1 - bx0)
+                y_overlap = min(ay1, by1) - max(ay0, by0)
+                min_h = min(ay1 - ay0, by1 - by0)
+                if (min_w > 0 and x_overlap / min_w > 0.5
+                        and (min_h <= 0 or y_overlap / min_h < 0.5)):
+                    boxes[i] = (min(ax0, bx0), min(ay0, by0),
+                                max(ax1, bx1), max(ay1, by1))
+                    del boxes[j]
+                    changed = True
+                    break
+            if changed:
+                break
+    return boxes
+
+
 def _expand_y(mask: list[int], sw: int, sh: int, box):
     """Kutunun y sınırlarını, x-aralığında maske içeren tüm satırlara genişlet."""
     x0, y0, x1, y1 = box
@@ -174,46 +170,29 @@ def _expand_y(mask: list[int], sw: int, sh: int, box):
     return (x0, ny0, x1, ny1)
 
 
-def _dilate(mask: list[int], w: int, h: int, rv: int, rh: int) -> list[int]:
-    """Ayrıştırılabilir genleşme: önce dikey ±rv, sonra yatay ±rh."""
-    tmp = [0] * (w * h)
-    for x in range(w):
-        run = 0
-        for y in range(h):
-            if mask[y * w + x]:
-                run = 2 * rv + 1
-            elif run:
-                run -= 1
-            if run > rv:  # ileri yönde doldur
-                tmp[y * w + x] = 1
-        run = 0
-        for y in range(h - 1, -1, -1):
-            if mask[y * w + x]:
-                run = rv + 1
-            elif run:
-                run -= 1
-            if run:
-                tmp[y * w + x] = 1
-    out = [0] * (w * h)
-    for y in range(h):
-        base = y * w
-        run = 0
-        for x in range(w):
-            if tmp[base + x]:
-                run = 2 * rh + 1
-            elif run:
-                run -= 1
-            if run > rh:
-                out[base + x] = 1
-        run = 0
-        for x in range(w - 1, -1, -1):
-            if tmp[base + x]:
-                run = rh + 1
-            elif run:
-                run -= 1
-            if run:
-                out[base + x] = 1
-    return out
+def _otsu(pixels: list[int]) -> int:
+    hist = [0] * 256
+    for v in pixels:
+        hist[v] += 1
+    total = len(pixels)
+    sum_all = sum(i * hist[i] for i in range(256))
+    sum_b = 0.0
+    w_b = 0
+    best_thr, best_var = 127, -1.0
+    for t in range(256):
+        w_b += hist[t]
+        if w_b == 0:
+            continue
+        w_f = total - w_b
+        if w_f == 0:
+            break
+        sum_b += t * hist[t]
+        m_b = sum_b / w_b
+        m_f = (sum_all - sum_b) / w_f
+        var = w_b * w_f * (m_b - m_f) ** 2
+        if var > best_var:
+            best_var, best_thr = var, t
+    return best_thr
 
 
 def _components(mask: list[int], w: int, h: int):
@@ -248,37 +227,43 @@ def _components(mask: list[int], w: int, h: int):
     return out
 
 
-def _otsu(pixels: list[int]) -> int:
-    hist = [0] * 256
-    for v in pixels:
-        hist[v] += 1
-    total = len(pixels)
-    sum_all = sum(i * hist[i] for i in range(256))
-    sum_b = 0.0
-    w_b = 0
-    best_thr, best_var = 127, -1.0
-    for t in range(256):
-        w_b += hist[t]
-        if w_b == 0:
-            continue
-        w_f = total - w_b
-        if w_f == 0:
-            break
-        sum_b += t * hist[t]
-        m_b = sum_b / w_b
-        m_f = (sum_all - sum_b) / w_f
-        var = w_b * w_f * (m_b - m_f) ** 2
-        if var > best_var:
-            best_var, best_thr = var, t
-    return best_thr
-
-
-# ---------------------------------------------------------------- kırpma
-
-def _crop_save(image_path: str, box: tuple[int, int, int, int], dest: str) -> None:
-    if HAS_CV2:
-        img = cv2.imread(image_path)
-        x0, y0, x1, y1 = box
-        cv2.imwrite(dest, img[y0:y1, x0:x1])
-    else:
-        Image.open(image_path).crop(box).save(dest)
+def _dilate(mask: list[int], w: int, h: int, rv: int, rh: int) -> list[int]:
+    """Ayrıştırılabilir genleşme: önce dikey ±rv, sonra yatay ±rh."""
+    tmp = [0] * (w * h)
+    for x in range(w):
+        run = 0
+        for y in range(h):
+            if mask[y * w + x]:
+                run = 2 * rv + 1
+            elif run:
+                run -= 1
+            if run > rv:
+                tmp[y * w + x] = 1
+        run = 0
+        for y in range(h - 1, -1, -1):
+            if mask[y * w + x]:
+                run = rv + 1
+            elif run:
+                run -= 1
+            if run:
+                tmp[y * w + x] = 1
+    out = [0] * (w * h)
+    for y in range(h):
+        base = y * w
+        run = 0
+        for x in range(w):
+            if tmp[base + x]:
+                run = 2 * rh + 1
+            elif run:
+                run -= 1
+            if run > rh:
+                out[base + x] = 1
+        run = 0
+        for x in range(w - 1, -1, -1):
+            if tmp[base + x]:
+                run = rh + 1
+            elif run:
+                run -= 1
+            if run:
+                out[base + x] = 1
+    return out

@@ -117,8 +117,8 @@ class WorkerPool:
             else:
                 pipe = self.pipeline
                 if job["ocr_model"]:
-                    ocr_text = pipe.ocr(job["image_path"], model=job["ocr_model"])
-                    result = pipe.postprocess(pipe.structure(ocr_text), ocr_text)
+                    ocr_text = pipe.ocr_checked(job["image_path"], model=job["ocr_model"])
+                    result = pipe.structure_checked(ocr_text)
                 else:
                     docs = pipe.run_auto(
                         job["image_path"], mode=job["mode"] or "two_stage"

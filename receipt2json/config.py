@@ -29,6 +29,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULTS = {
     "ollama_host": "http://127.0.0.1:11434",
     "ocr_model": "deepseek-ocr:latest",
+    "fallback_ocr_model": "minicpm-v4.5:latest",
     "structure_model": "qwen3-coder:30b",
     "vision_model": "qwen3-vl:8b",
     "max_upload_mb": 20,
