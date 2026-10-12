@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fiş Arşivi</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1a1d21; --muted: #6b7280;
+    --accent: #2563eb; --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+    --border: #e5e7eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --card: #1b1f26; --text: #e7e9ec; --muted: #9aa1ab;
+      --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24; --err: #f87171;
+      --border: #2a2f38;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111418; --card: #1b1f26; --text: #e7e9ec; --muted: #9aa1ab;
+    --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24; --err: #f87171;
+    --border: #2a2f38;
+  }
+  .theme-btn {
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    border-radius: 999px; padding: 4px 14px; cursor: pointer; font: inherit;
+    font-size: 13px; float: right;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, "Segoe UI", sans-serif;
+    padding: 24px 16px; max-width: 1000px; margin-inline: auto;
+  }
+  nav { margin-bottom: 18px; font-size: 14px; }
+  nav a { color: var(--accent); text-decoration: none; margin-right: 16px; }
+  nav .here { color: var(--text); font-weight: 700; }
+  h1 { font-size: 20px; margin: 0 0 14px; }
+  .stats {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .stat {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 14px; font-size: 13px;
+  }
+  .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .stat .v { font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  input, select {
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; font: inherit;
+  }
+  input { flex: 1; min-width: 200px; }
+  table {
+    width: 100%; border-collapse: collapse; background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    font-size: 14px;
+  }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .b-done { color: var(--ok); border-color: var(--ok); }
+  .b-suspect { color: var(--err); border-color: var(--err); }
+  .b-warn { color: var(--warn); border-color: var(--warn); }
+  .b-queued, .b-processing { color: var(--accent); border-color: var(--accent); }
+  .b-error { color: var(--err); border-color: var(--err); }
+  .muted { color: var(--muted); }
+  #detail {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none;
+    align-items: flex-start; justify-content: center; padding: 30px 16px; overflow: auto;
+  }
+  #detail.open { display: flex; }
+  .panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    max-width: 760px; width: 100%; padding: 20px;
+  }
+  .panel h2 { margin: 0 0 4px; font-size: 17px; }
+  .panel .close { float: right; cursor: pointer; color: var(--muted); font-size: 20px; border: 0; background: none; }
+  .panel .del-btn {
+    float: right; cursor: pointer; color: var(--err); border: 1px solid var(--err);
+    background: none; border-radius: 8px; padding: 3px 10px; font: inherit;
+    font-size: 13px; margin-right: 10px;
+  }
+  button.del {
+    cursor: pointer; border: 0; background: none; font-size: 15px; opacity: .4;
+    padding: 2px 6px;
+  }
+  button.del:hover { opacity: 1; }
+  .panel img { max-width: 100%; max-height: 360px; border-radius: 8px; border: 1px solid var(--border); margin-top: 10px; }
+  pre {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; overflow: auto; font-size: 12px; max-height: 50vh;
+  }
+  .empty { padding: 30px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<nav>
+  <a href="/">Yükle</a>
+  <span class="here">Arşiv</span>
+  <a href="/docs" style="margin-left:16px">API Dokümanı</a>
+  <button class="theme-btn" id="themeBtn" onclick="cycleTheme()">🌓 Tema</button>
+</nav>
+<script>
+const THEMES = [["auto", "🌓 Otomatik"], ["light", "☀️ Açık"], ["dark", "🌙 Koyu"]];
+function applyTheme(t) {
+  if (t === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  const btn = document.getElementById("themeBtn");
+  if (btn) btn.textContent = THEMES.find(x => x[0] === t)[1];
+}
+function cycleTheme() {
+  let cur = "auto";
+  try { cur = localStorage.getItem("theme") || "auto"; } catch {}
+  const next = THEMES[(THEMES.findIndex(x => x[0] === cur) + 1) % THEMES.length][0];
+  try { localStorage.setItem("theme", next); } catch {}
+  applyTheme(next);
+}
+try { applyTheme(localStorage.getItem("theme") || "auto"); } catch { applyTheme("auto"); }
+</script>
+<h1>Fiş Arşivi</h1>
+
+<div class="stats" id="stats"></div>
+
+<div class="filters">
+  <input id="q" placeholder="Ara: dosya adı, firma, VKN, tutar…">
+  <select id="status">
+    <option value="">Tüm durumlar</option>
+    <option value="done">tamam</option>
+    <option value="queued">kuyrukta</option>
+    <option value="processing">işleniyor</option>
+    <option value="error">hata</option>
+  </select>
+  <select id="sort">
+    <option value="created_desc" selected>Yükleme: yeni → eski</option>
+    <option value="created_asc">Yükleme: eski → yeni</option>
+    <option value="docdate_desc">Fiş tarihi: yeni → eski</option>
+    <option value="docdate_asc">Fiş tarihi: eski → yeni</option>
+    <option value="total_desc">Tutar: büyük → küçük</option>
+    <option value="total_asc">Tutar: küçük → büyük</option>
+  </select>
+  <select id="limit">
+    <option>50</option><option>100</option><option selected>200</option>
+  </select>
+</div>
+
+<table>
+  <thead><tr>
+    <th>Tarih (yükleme)</th><th>Dosya</th><th>Firma</th><th>Fiş Tarihi</th>
+    <th class="num">Toplam</th><th class="num">Süre</th><th>Durum</th><th></th>
+  </tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<div class="empty" id="empty" style="display:none">Kayıt bulunamadı.</div>
+
+<footer style="margin-top:40px;padding-top:14px;border-top:1px solid var(--border);
+               font-size:13px;color:var(--muted);text-align:center">
+  Bu proje <a href="https://www.softviser.com.tr" target="_blank" rel="noopener"
+  style="color:var(--accent);text-decoration:none;font-weight:600">Softviser Yazılım</a>
+  tarafından geliştirilmiştir.
+</footer>
+
+<div id="detail"><div class="panel">
+  <button class="close" onclick="closeDetail()">✕</button>
+  <button class="del-btn" onclick="removeJob(currentDetailId, currentDetailName)">🗑 Sil</button>
+  <h2 id="d-title"></h2>
+  <div class="muted" id="d-sub"></div>
+  <img id="d-img" alt="fiş görseli" loading="lazy">
+  <pre id="d-json"></pre>
+</div></div>
+
+<script>
+const rowsEl = document.getElementById('rows');
+const emptyEl = document.getElementById('empty');
+let t = null;
+let currentDetailId = null;
+let currentDetailName = null;
+
+function fmtTL(n) {
+  return n == null ? '—' : Number(n).toLocaleString('tr-TR',
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TL';
+}
+function fmtTs(ts) {
+  return ts ? new Date(ts * 1000).toLocaleString('tr-TR',
+    { dateStyle: 'short', timeStyle: 'short' }) : '—';
+}
+function statusBadge(row) {
+  if (row.status === 'done') {
+    const s = row.summary || {};
+    if (s.suspect) return '<span class="badge b-suspect">ŞÜPHELİ</span>';
+    if (s.warnings) return '<span class="badge b-warn">' + s.warnings + ' uyarı</span>';
+    return '<span class="badge b-done">temiz</span>';
+  }
+  const map = { queued: 'kuyrukta', processing: 'işleniyor', error: 'hata' };
+  return '<span class="badge b-' + row.status + '">' + (map[row.status] || row.status) + '</span>';
+}
+
+async function loadStats() {
+  try {
+    const s = await (await fetch('/api/stats')).json();
+    const el = document.getElementById('stats');
+    const sn = v => v == null ? '—' : v.toLocaleString('tr-TR') + ' sn';
+    const cells = [
+      ['Tamamlanan iş', s.done_count],
+      ['Ortalama süre', sn(s.avg_seconds)],
+      ['Son 10 ort.', sn(s.avg_seconds_last10)],
+      ['En hızlı', sn(s.min_seconds)],
+      ['En yavaş', sn(s.max_seconds)],
+    ];
+    if (s.by_status && (s.by_status.queued || s.by_status.processing)) {
+      cells.push(['Bekleyen', (s.by_status.queued || 0) + (s.by_status.processing || 0)]);
+    }
+    if (s.by_status && s.by_status.error) cells.push(['Hatalı', s.by_status.error]);
+    el.innerHTML = '';
+    for (const [k, v] of cells) {
+      const d = document.createElement('div');
+      d.className = 'stat';
+      const kk = document.createElement('div'); kk.className = 'k'; kk.textContent = k;
+      const vv = document.createElement('div'); vv.className = 'v'; vv.textContent = v ?? '—';
+      d.append(kk, vv); el.appendChild(d);
+    }
+  } catch {}
+}
+
+function sortJobs(jobs, mode) {
+  const [key, dir] = mode.split('_');            // created|docdate|total, asc|desc
+  const sign = dir === 'asc' ? 1 : -1;
+  const val = row => {
+    if (key === 'created') return row.created_at || 0;
+    if (key === 'docdate') return (row.summary && row.summary.date) || null;
+    return row.summary ? row.summary.total : null;
+  };
+  jobs.sort((a, b) => {
+    const va = val(a), vb = val(b);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;                    // değeri olmayanlar hep sona
+    if (vb == null) return -1;
+    if (va < vb) return -1 * sign;
+    if (va > vb) return 1 * sign;
+    return 0;
+  });
+}
+
+async function load() {
+  const q = document.getElementById('q').value.trim();
+  const status = document.getElementById('status').value;
+  const limit = document.getElementById('limit').value;
+  const url = '/api/jobs?limit=' + limit
+    + (status ? '&status=' + status : '')
+    + (q ? '&q=' + encodeURIComponent(q) : '');
+  const { jobs } = await (await fetch(url)).json();
+  sortJobs(jobs, document.getElementById('sort').value);
+  rowsEl.innerHTML = '';
+  emptyEl.style.display = jobs.length ? 'none' : 'block';
+  for (const row of jobs) {
+    const s = row.summary || {};
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="muted">${fmtTs(row.created_at)}</td>
+      <td></td>
+      <td></td>
+      <td>${s.date || '—'}${s.multi ? ' <span class="badge b-queued">' + s.count + ' fiş</span>' : ''}</td>
+      <td class="num">${fmtTL(s.total)}</td>
+      <td class="num muted">${row.elapsed_seconds != null ? row.elapsed_seconds.toLocaleString('tr-TR') + ' sn' : '—'}</td>
+      <td>${statusBadge(row)}</td>
+      <td><button class="del" title="Sil">🗑</button></td>`;
+    tr.children[1].textContent = row.orig_name || row.id;
+    tr.children[2].textContent = s.vendor || '—';
+    tr.addEventListener('click', () => openDetail(row.id));
+    tr.querySelector('.del').addEventListener('click', e => {
+      e.stopPropagation();
+      removeJob(row.id, row.orig_name || row.id);
+    });
+    rowsEl.appendChild(tr);
+  }
+}
+
+async function removeJob(id, name) {
+  if (!confirm('"' + name + '" kaydı ve görseli kalıcı olarak silinecek. Emin misin?')) return;
+  const r = await fetch('/api/jobs/' + id, { method: 'DELETE' });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    alert('Silinemedi: ' + (j.detail || r.status));
+    return;
+  }
+  closeDetail();
+  load();
+  loadStats();
+}
+
+async function openDetail(id) {
+  const j = await (await fetch('/api/jobs/' + id)).json();
+  currentDetailId = id;
+  currentDetailName = j.orig_name || j.job_id;
+  document.getElementById('d-title').textContent = j.orig_name || j.job_id;
+  document.getElementById('d-sub').textContent =
+    'iş: ' + j.job_id + ' · yükleme: ' + fmtTs(j.created_at)
+    + (j.elapsed_seconds ? ' · işlem: ' + j.elapsed_seconds + ' sn' : '');
+  document.getElementById('d-img').src = '/api/jobs/' + id + '/image';
+  document.getElementById('d-json').textContent =
+    JSON.stringify(j.result ?? j.error ?? j, null, 2);
+  document.getElementById('detail').classList.add('open');
+}
+function closeDetail() { document.getElementById('detail').classList.remove('open'); }
+document.getElementById('detail').addEventListener('click', e => {
+  if (e.target.id === 'detail') closeDetail();
+});
+
+document.getElementById('q').addEventListener('input', () => {
+  clearTimeout(t); t = setTimeout(load, 300);
+});
+document.getElementById('status').addEventListener('change', load);
+document.getElementById('limit').addEventListener('change', load);
+document.getElementById('sort').addEventListener('change', load);
+load();
+loadStats();
+</script>
+</body>
+</html>

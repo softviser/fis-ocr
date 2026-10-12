@@ -1,0 +1,11 @@
+{
+    "ollama_host": "http://127.0.0.1:11434",
+    "ocr_model": "deepseek-ocr:latest",
+    "structure_model": "qwen3-coder:30b",
+    "vision_model": "qwen3-vl:8b",
+    "max_upload_mb": 20,
+    "worker_count": 1,
+    "data_dir": "service_data",
+    "retention_days": 30,
+    "cleanup_interval_hours": 6
+}

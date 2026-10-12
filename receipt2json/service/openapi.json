@@ -1,0 +1,229 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Fiş OCR API",
+        "description": "Türk yazar kasa fişlerinin okunması ve JSON formatına çevrilmesi. Asenkron kuyruk modeli: görsel gönderilir, job_id döner, sonuç job_id ile sorgulanır. Softviser Yazılım — https://www.softviser.com.tr",
+        "version": "1.0.0",
+        "license": { "name": "MIT" }
+    },
+    "servers": [
+        { "url": "http://10.0.0.100:8080", "description": "Üretim (örnek adres)" },
+        { "url": "http://localhost:8077", "description": "Geliştirme" }
+    ],
+    "paths": {
+        "/api/jobs": {
+            "post": {
+                "summary": "İş gönder (dosya yükleme)",
+                "operationId": "createJob",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["file"],
+                                "properties": {
+                                    "file": { "type": "string", "format": "binary", "description": "jpg, png, webp, bmp, tiff" },
+                                    "mode": { "type": "string", "enum": ["two_stage", "direct"], "default": "two_stage" },
+                                    "ocr_model": { "type": "string", "description": "Örn. glm-ocr:latest; boşsa config'teki" }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": { "description": "İş kuyruğa alındı", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobCreated" } } } },
+                    "413": { "$ref": "#/components/responses/Error" },
+                    "415": { "$ref": "#/components/responses/Error" },
+                    "422": { "$ref": "#/components/responses/Error" }
+                }
+            },
+            "get": {
+                "summary": "Arşiv — iş listesi",
+                "operationId": "listJobs",
+                "parameters": [
+                    { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 200 } },
+                    { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["queued", "processing", "done", "error"] } },
+                    { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "Dosya adı veya sonuç JSON'u içinde metin araması" }
+                ],
+                "responses": {
+                    "200": { "description": "İş listesi", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobList" } } } }
+                }
+            }
+        },
+        "/api/jobs/base64": {
+            "post": {
+                "summary": "İş gönder (base64 / pano görseli, JSON gövde)",
+                "operationId": "createJobBase64",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["data"],
+                                "properties": {
+                                    "data": { "type": "string", "description": "Base64 gövde veya data:image/...;base64,... data-URL" },
+                                    "filename": { "type": "string" },
+                                    "mode": { "type": "string", "enum": ["two_stage", "direct"], "default": "two_stage" },
+                                    "ocr_model": { "type": "string" }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": { "description": "İş kuyruğa alındı", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobCreated" } } } },
+                    "413": { "$ref": "#/components/responses/Error" },
+                    "415": { "$ref": "#/components/responses/Error" },
+                    "422": { "$ref": "#/components/responses/Error" }
+                }
+            }
+        },
+        "/api/jobs/{job_id}": {
+            "get": {
+                "summary": "İş durumu / sonucu",
+                "operationId": "getJob",
+                "parameters": [{ "$ref": "#/components/parameters/JobId" }],
+                "responses": {
+                    "200": { "description": "İş durumu; status=done ise result dolu", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JobStatus" } } } },
+                    "404": { "$ref": "#/components/responses/Error" }
+                }
+            },
+            "delete": {
+                "summary": "İşi ve görselini kalıcı sil",
+                "operationId": "deleteJob",
+                "parameters": [{ "$ref": "#/components/parameters/JobId" }],
+                "responses": {
+                    "200": { "description": "Silindi", "content": { "application/json": { "schema": { "type": "object", "properties": { "deleted": { "type": "string" } } } } } },
+                    "404": { "$ref": "#/components/responses/Error" }
+                }
+            }
+        },
+        "/api/jobs/{job_id}/image": {
+            "get": {
+                "summary": "İşe ait orijinal görsel",
+                "operationId": "getJobImage",
+                "parameters": [{ "$ref": "#/components/parameters/JobId" }],
+                "responses": {
+                    "200": { "description": "Görsel dosyası", "content": { "image/*": { "schema": { "type": "string", "format": "binary" } } } },
+                    "404": { "$ref": "#/components/responses/Error" }
+                }
+            }
+        },
+        "/api/stats": {
+            "get": {
+                "summary": "Analiz süresi istatistikleri",
+                "operationId": "getStats",
+                "responses": {
+                    "200": {
+                        "description": "İstatistikler",
+                        "content": { "application/json": { "schema": {
+                            "type": "object",
+                            "properties": {
+                                "done_count": { "type": "integer" },
+                                "avg_seconds": { "type": "number", "nullable": true },
+                                "avg_seconds_last10": { "type": "number", "nullable": true },
+                                "min_seconds": { "type": "number", "nullable": true },
+                                "max_seconds": { "type": "number", "nullable": true },
+                                "by_status": { "type": "object", "additionalProperties": { "type": "integer" } }
+                            }
+                        } } }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "summary": "Sağlık kontrolü",
+                "operationId": "health",
+                "responses": {
+                    "200": { "description": "Servis durumu", "content": { "application/json": { "schema": {
+                        "type": "object",
+                        "properties": {
+                            "status": { "type": "string" },
+                            "queue_size": { "type": "integer" },
+                            "worker_count": { "type": "integer" },
+                            "max_upload_mb": { "type": "integer" },
+                            "retention_days": { "type": "integer" },
+                            "fake_mode": { "type": "boolean" }
+                        }
+                    } } } }
+                }
+            }
+        }
+    },
+    "components": {
+        "parameters": {
+            "JobId": { "name": "job_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        },
+        "responses": {
+            "Error": { "description": "Hata", "content": { "application/json": { "schema": { "type": "object", "properties": { "detail": { "type": "string" } } } } } }
+        },
+        "schemas": {
+            "JobCreated": {
+                "type": "object",
+                "properties": {
+                    "job_id": { "type": "string" },
+                    "status": { "type": "string", "enum": ["queued"] },
+                    "queue_position": { "type": "integer" },
+                    "status_url": { "type": "string" }
+                }
+            },
+            "JobStatus": {
+                "type": "object",
+                "properties": {
+                    "job_id": { "type": "string" },
+                    "status": { "type": "string", "enum": ["queued", "processing", "done", "error"] },
+                    "created_at": { "type": "number" },
+                    "queue_position": { "type": "integer", "nullable": true },
+                    "elapsed_seconds": { "type": "number", "nullable": true },
+                    "result": { "$ref": "#/components/schemas/Receipt" },
+                    "error": { "type": "string", "nullable": true }
+                }
+            },
+            "JobList": {
+                "type": "object",
+                "properties": {
+                    "jobs": { "type": "array", "items": { "type": "object" } }
+                }
+            },
+            "Receipt": {
+                "type": "object",
+                "nullable": true,
+                "description": "Tek fişte fiş alanları; çok fişli karede {_multi: true, receipt_count, receipts: [...]}",
+                "properties": {
+                    "vendor_name": { "type": "string", "nullable": true },
+                    "vendor_tax_no": { "type": "string", "nullable": true },
+                    "vendor_tax_office": { "type": "string", "nullable": true },
+                    "vendor_address": { "type": "string", "nullable": true },
+                    "doc_date": { "type": "string", "nullable": true, "description": "YYYY-MM-DD" },
+                    "doc_time": { "type": "string", "nullable": true },
+                    "doc_no": { "type": "string", "nullable": true },
+                    "category": { "type": "string", "enum": ["yazar_kasa", "e_arsiv", "e_fatura", "pos_slip", "diger"] },
+                    "payment_method": { "type": "string", "enum": ["kredi_karti", "nakit", "havale", "diger", "bilinmiyor"] },
+                    "currency": { "type": "string" },
+                    "items": { "type": "array", "items": { "type": "object", "properties": {
+                        "name": { "type": "string" }, "qty": { "type": "number" },
+                        "unit_price": { "type": "number", "nullable": true },
+                        "vat_rate": { "type": "number", "nullable": true },
+                        "total": { "type": "number", "nullable": true } } } },
+                    "subtotal": { "type": "number", "nullable": true },
+                    "vat_rate": { "type": "number", "nullable": true },
+                    "vat_amount": { "type": "number", "nullable": true },
+                    "grand_total": { "type": "number", "nullable": true },
+                    "card_last4": { "type": "string", "nullable": true },
+                    "card_bank": { "type": "string", "nullable": true },
+                    "card_type": { "type": "string", "nullable": true },
+                    "approval_code": { "type": "string", "nullable": true },
+                    "batch_no": { "type": "string", "nullable": true },
+                    "notes": { "type": "string", "nullable": true },
+                    "_tax_check": { "type": "object", "description": "VKN sağlama + kayıtlı firma eşleştirme" },
+                    "_card_hint": { "type": "string", "nullable": true },
+                    "_warnings": { "type": "array", "items": { "type": "string" } },
+                    "_suspect": { "type": "boolean", "description": "true ise insan kontrolü önerilir" }
+                }
+            }
+        }
+    }
+}

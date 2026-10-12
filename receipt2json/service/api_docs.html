@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fiş OCR API</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1a1d21; --muted: #6b7280;
+    --accent: #2563eb; --ok: #16a34a; --border: #e5e7eb; --code: #f0f1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --card: #1b1f26; --text: #e7e9ec; --muted: #9aa1ab;
+      --accent: #60a5fa; --ok: #4ade80; --border: #2a2f38; --code: #14171c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111418; --card: #1b1f26; --text: #e7e9ec; --muted: #9aa1ab;
+    --accent: #60a5fa; --ok: #4ade80; --border: #2a2f38; --code: #14171c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 system-ui, "Segoe UI", sans-serif;
+    padding: 24px 16px; max-width: 900px; margin-inline: auto;
+  }
+  nav { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; font-size: 14px; flex-wrap: wrap; }
+  nav a { color: var(--accent); text-decoration: none; }
+  nav .here { color: var(--text); font-weight: 700; }
+  nav .spacer { flex: 1; }
+  .theme-btn {
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    border-radius: 999px; padding: 4px 14px; cursor: pointer; font: inherit; font-size: 13px;
+  }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  details.ep-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    margin: 12px 0; overflow: hidden;
+  }
+  details.ep-box > summary {
+    cursor: pointer; padding: 12px 16px; font-weight: 600; list-style: none;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  details.ep-box > summary::-webkit-details-marker { display: none; }
+  details.ep-box > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
+  details.ep-box[open] > summary::before { transform: rotate(90deg); }
+  details.ep-box > .body { padding: 0 16px 16px; border-top: 1px solid var(--border); }
+  .m { font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 700;
+       padding: 2px 8px; border-radius: 6px; border: 1px solid; }
+  .m.post { color: var(--ok); }
+  .m.get { color: var(--accent); }
+  .m.del { color: #dc2626; }
+  .path { font-family: ui-monospace, Consolas, monospace; font-size: 14px; }
+  .desc { color: var(--muted); font-weight: 400; font-size: 13px; }
+  pre {
+    background: var(--code); border: 1px solid var(--border); border-radius: 0 0 8px 8px;
+    padding: 12px 14px; overflow: auto; font-size: 12.5px; line-height: 1.5; margin: 0;
+  }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 10px 0; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 12px; }
+  .muted { color: var(--muted); }
+  /* kod kutusu: başlık + kopyala */
+  .codebox { margin: 12px 0; }
+  .codebox .head {
+    display: flex; align-items: center; background: var(--card);
+    border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0;
+    padding: 4px 6px 4px 12px; font-size: 12px; color: var(--muted); gap: 6px;
+  }
+  .codebox .head .title { flex: 1; font-weight: 600; }
+  .copy-btn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 6px; padding: 2px 10px; cursor: pointer; font: inherit; font-size: 12px;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+  .copy-btn.ok { color: var(--ok); border-color: var(--ok); }
+  /* dil sekmeleri */
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 14px 0 0; }
+  .tabs button {
+    background: var(--card); border: 1px solid var(--border); color: var(--muted);
+    border-radius: 8px 8px 0 0; border-bottom: 0; padding: 5px 14px; cursor: pointer;
+    font: inherit; font-size: 13px;
+  }
+  .tabs button.active { color: var(--accent); font-weight: 700; }
+  .tabpane { display: none; }
+  .tabpane.active { display: block; }
+  .tabpane .codebox { margin-top: 0; }
+  .tabpane .codebox .head { border-radius: 0 8px 0 0; }
+</style>
+</head>
+<body>
+<nav>
+  <a href="/">Yükle</a>
+  <a href="/arsiv">Arşiv</a>
+  <span class="here">API Dokümanı</span>
+  <a href="/openapi.json">OpenAPI (JSON)</a>
+  <span class="spacer"></span>
+  <button class="theme-btn" id="themeBtn" onclick="cycleTheme()">🌓 Tema</button>
+</nav>
+
+<h1>Fiş OCR API</h1>
+<p class="sub">Asenkron kuyruk modeli: görsel gönderilir → anında <code>job_id</code> döner →
+sonuç <code>job_id</code> ile sorgulanır. Örneklerdeki taban adres: <code>http://10.0.0.100:8080</code>
+— kendi sunucu adresinizle değiştirin. Makine tarafından okunabilir tanım:
+<a href="/openapi.json">/openapi.json</a> (OpenAPI 3.0; Postman/Insomnia'ya içe aktarılabilir).</p>
+
+<h2 style="font-size:17px;margin:24px 0 2px">Uç noktaları</h2>
+
+<details class="ep-box" open>
+  <summary><span class="m post">POST</span><span class="path">/api/jobs</span>
+    <span class="desc">İş gönder — dosya yükleme (multipart)</span></summary>
+  <div class="body">
+    <table>
+      <tr><th>Form alanı</th><th>Zorunlu</th><th>Açıklama</th></tr>
+      <tr><td><code>file</code></td><td>evet</td><td>Görsel (jpg, png, webp, bmp, tiff)</td></tr>
+      <tr><td><code>mode</code></td><td>hayır</td><td><code>two_stage</code> (varsayılan) | <code>direct</code></td></tr>
+      <tr><td><code>ocr_model</code></td><td>hayır</td><td>Örn. <code>glm-ocr:latest</code></td></tr>
+    </table>
+    <p>Yanıt <code>202</code>: <code>{"job_id":"...","status":"queued","queue_position":1,"status_url":"/api/jobs/..."}</code></p>
+  </div>
+</details>
+
+<details class="ep-box">
+  <summary><span class="m post">POST</span><span class="path">/api/jobs/base64</span>
+    <span class="desc">İş gönder — base64 / pano görseli (JSON)</span></summary>
+  <div class="body">
+    <table>
+      <tr><th>JSON alanı</th><th>Zorunlu</th><th>Açıklama</th></tr>
+      <tr><td><code>data</code></td><td>evet</td><td>Base64 gövde veya <code>data:image/png;base64,...</code> data-URL</td></tr>
+      <tr><td><code>filename</code></td><td>hayır</td><td>Uzantı tür tespitinde kullanılır</td></tr>
+      <tr><td><code>mode</code>, <code>ocr_model</code></td><td>hayır</td><td>Multipart ile aynı</td></tr>
+    </table>
+  </div>
+</details>
+
+<details class="ep-box">
+  <summary><span class="m get">GET</span><span class="path">/api/jobs/{job_id}</span>
+    <span class="desc">Sonuç sorgulama (polling, ~2 sn aralık önerilir)</span></summary>
+  <div class="body">
+    <p>Durumlar: <code>queued</code> (+ <code>queue_position</code>) → <code>processing</code> →
+    <code>done</code> (+ <code>result</code>, <code>elapsed_seconds</code>) | <code>error</code>.</p>
+    <p>Çok fişli karede <code>result</code>:
+    <code>{"_multi": true, "receipt_count": 3, "receipts": [...]}</code></p>
+    <p><b>Güven kuralı:</b> <code>_suspect</code> yok + <code>_warnings</code> boş +
+    <code>_tax_check.valid</code> → otomatik onaylanabilir; aksi halde insan kontrolü.</p>
+  </div>
+</details>
+
+<details class="ep-box">
+  <summary><span class="m get">GET</span><span class="path">/api/jobs</span>
+    <span class="desc">Arşiv listesi — filtre: limit, status, q</span></summary>
+  <div class="body">
+    <p><code>?limit=100&status=done&q=KEBAP</code> — <code>q</code> dosya adı veya sonuç
+    JSON'u içinde arar. Her satırda <code>summary</code> (firma, toplam, tarih, şüpheli)
+    ve <code>elapsed_seconds</code> bulunur.</p>
+  </div>
+</details>
+
+<details class="ep-box">
+  <summary><span class="m get">GET</span><span class="path">/api/jobs/{job_id}/image</span>
+    <span class="desc">İşe ait orijinal görsel</span></summary>
+  <div class="body"><p>Şüpheli işlerin insan kontrolünde kullanışlıdır.</p></div>
+</details>
+
+<details class="ep-box">
+  <summary><span class="m del">DELETE</span><span class="path">/api/jobs/{job_id}</span>
+    <span class="desc">İşi ve görselini kalıcı sil</span></summary>
+  <div class="body"><p>Geri alınamaz. Yanıt: <code>{"deleted": "job_id"}</code></p></div>
+</details>
+
+<details class="ep-box">
+  <summary><span class="m get">GET</span><span class="path">/api/stats</span>
+    <span class="desc">Analiz süresi istatistikleri</span></summary>
+  <div class="body">
+    <p><code>done_count</code>, <code>avg_seconds</code>, <code>avg_seconds_last10</code>,
+    <code>min_seconds</code>, <code>max_seconds</code>, <code>by_status</code></p>
+  </div>
+</details>
+
+<details class="ep-box">
+  <summary><span class="m get">GET</span><span class="path">/health</span>
+    <span class="desc">Sağlık kontrolü</span></summary>
+  <div class="body">
+    <p><code>{"status":"ok","queue_size":0,"worker_count":1,"max_upload_mb":20,"retention_days":30}</code></p>
+  </div>
+</details>
+
+<h2 style="font-size:17px;margin:28px 0 2px">Örnek kodlar — gönder ve sonucu bekle</h2>
+<p class="sub">Dil seçin; kod bloklarını sağ üstteki düğmeyle kopyalayabilirsiniz.</p>
+
+<div class="tabs" id="langTabs"></div>
+<div id="langPanes"></div>
+
+<h2 style="font-size:17px;margin:28px 0 2px">Hata kodları</h2>
+<table>
+  <tr><th>Kod</th><th>Anlamı</th></tr>
+  <tr><td><code>404</code></td><td>İş bulunamadı</td></tr>
+  <tr><td><code>413</code></td><td>Dosya boyut sınırını aşıyor (sınır: config → <code>max_upload_mb</code>)</td></tr>
+  <tr><td><code>415</code></td><td>Desteklenmeyen dosya türü / içerik tipi</td></tr>
+  <tr><td><code>422</code></td><td>Eksik veya geçersiz alan (boş dosya, bozuk base64, geçersiz mode)</td></tr>
+</table>
+<p class="muted">Hata gövdesi her zaman <code>{"detail": "açıklama"}</code> biçimindedir.</p>
+
+<footer style="margin-top:40px;padding-top:14px;border-top:1px solid var(--border);
+               font-size:13px;color:var(--muted);text-align:center">
+  Bu proje <a href="https://www.softviser.com.tr" target="_blank" rel="noopener"
+  style="color:var(--accent);text-decoration:none;font-weight:600">Softviser Yazılım</a>
+  tarafından geliştirilmiştir.
+</footer>
+
+<script>
+// ------------------------------------------------------------ tema seçici
+const THEMES = [["auto", "🌓 Otomatik"], ["light", "☀️ Açık"], ["dark", "🌙 Koyu"]];
+function applyTheme(t) {
+  if (t === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  const label = THEMES.find(x => x[0] === t)[1];
+  const btn = document.getElementById("themeBtn");
+  if (btn) btn.textContent = label;
+}
+function cycleTheme() {
+  let cur = "auto";
+  try { cur = localStorage.getItem("theme") || "auto"; } catch {}
+  const next = THEMES[(THEMES.findIndex(x => x[0] === cur) + 1) % THEMES.length][0];
+  try { localStorage.setItem("theme", next); } catch {}
+  applyTheme(next);
+}
+try { applyTheme(localStorage.getItem("theme") || "auto"); } catch { applyTheme("auto"); }
+
+// ------------------------------------------------------------ örnek kodlar
+const BASE = "http://10.0.0.100:8080";
+const SAMPLES = {
+  "cURL": `# 1) Dosya ile gönder
+curl -F "file=@fis.jpg" ${BASE}/api/jobs
+# -> {"job_id":"a1b2c3","status":"queued",...}
+
+# base64 ile gönder
+curl -X POST ${BASE}/api/jobs/base64 \\
+     -H "Content-Type: application/json" \\
+     -d "{\\"filename\\":\\"fis.jpg\\",\\"data\\":\\"$(base64 -w0 fis.jpg)\\"}"
+
+# 2) Sonucu sorgula
+curl ${BASE}/api/jobs/a1b2c3`,
+
+  "Python": `import time, requests
+
+BASE = "${BASE}"
+
+# Dosya ile gönder (base64 için: /api/jobs/base64 + json={"data": b64})
+with open("fis.jpg", "rb") as f:
+    job = requests.post(f"{BASE}/api/jobs", files={"file": f}).json()
+print("kuyruk no:", job["job_id"], "sıra:", job["queue_position"])
+
+# Sonucu bekle
+while True:
+    j = requests.get(BASE + job["status_url"]).json()
+    if j["status"] in ("done", "error"):
+        break
+    time.sleep(2)
+
+if j["status"] == "done":
+    fis = j["result"]
+    print(fis["vendor_name"], fis["grand_total"], "TL")
+    if fis.get("_suspect"):
+        print("ŞÜPHELİ - insan kontrolü gerekli:", fis.get("_warnings"))
+else:
+    print("HATA:", j["error"])`,
+
+  "PHP": `<?php
+$base = "${BASE}";
+
+// 1) Dosya ile gönder (multipart)
+$ch = curl_init("$base/api/jobs");
+curl_setopt_array($ch, [
+    CURLOPT_POST => true,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POSTFIELDS => ["file" => new CURLFile("fis.jpg")],
+]);
+$job = json_decode(curl_exec($ch), true);
+curl_close($ch);
+echo "Kuyruk no: {$job['job_id']} (sıra {$job['queue_position']})\\n";
+
+// base64 ile göndermek için:
+// $payload = json_encode(["filename" => "fis.jpg",
+//                         "data" => base64_encode(file_get_contents("fis.jpg"))]);
+// POST $base/api/jobs/base64, Content-Type: application/json
+
+// 2) Sonucu bekle
+do {
+    sleep(2);
+    $j = json_decode(file_get_contents("$base/api/jobs/{$job['job_id']}"), true);
+} while (in_array($j["status"], ["queued", "processing"]));
+
+if ($j["status"] === "done") {
+    $fis = $j["result"];
+    echo "{$fis['vendor_name']} - {$fis['grand_total']} TL\\n";
+    if (!empty($fis["_suspect"])) {
+        echo "ŞÜPHELİ - insan kontrolü gerekli\\n";
+    }
+} else {
+    echo "HATA: {$j['error']}\\n";
+}`,
+
+  "Node.js": `// Node 18+ (yerleşik fetch + FormData)
+import { readFile } from "node:fs/promises";
+
+const BASE = "${BASE}";
+
+// 1) Dosya ile gönder
+const form = new FormData();
+form.append("file", new Blob([await readFile("fis.jpg")]), "fis.jpg");
+const job = await (await fetch(\`\${BASE}/api/jobs\`, { method: "POST", body: form })).json();
+console.log("kuyruk no:", job.job_id, "sıra:", job.queue_position);
+
+// base64 ile: POST /api/jobs/base64
+// body: JSON.stringify({ filename: "fis.jpg", data: buf.toString("base64") })
+
+// 2) Sonucu bekle
+let j;
+do {
+  await new Promise(r => setTimeout(r, 2000));
+  j = await (await fetch(\`\${BASE}/api/jobs/\${job.job_id}\`)).json();
+} while (j.status === "queued" || j.status === "processing");
+
+if (j.status === "done") {
+  console.log(j.result.vendor_name, j.result.grand_total, "TL");
+  if (j.result._suspect) console.warn("ŞÜPHELİ:", j.result._warnings);
+} else {
+  console.error("HATA:", j.error);
+}`,
+
+  "C#": `using System.Net.Http.Json;
+
+var baseUrl = "${BASE}";
+using var http = new HttpClient();
+
+// 1) Dosya ile gönder
+using var form = new MultipartFormDataContent();
+form.Add(new ByteArrayContent(File.ReadAllBytes("fis.jpg")), "file", "fis.jpg");
+var job = await (await http.PostAsync($"{baseUrl}/api/jobs", form))
+    .Content.ReadFromJsonAsync<Dictionary<string, object>>();
+var jobId = job!["job_id"].ToString();
+Console.WriteLine($"Kuyruk no: {jobId}");
+
+// base64 ile: PostAsJsonAsync($"{baseUrl}/api/jobs/base64",
+//     new { filename = "fis.jpg", data = Convert.ToBase64String(bytes) });
+
+// 2) Sonucu bekle
+Dictionary<string, object>? j;
+do {
+    await Task.Delay(2000);
+    j = await http.GetFromJsonAsync<Dictionary<string, object>>(
+        $"{baseUrl}/api/jobs/{jobId}");
+} while (j!["status"].ToString() is "queued" or "processing");
+
+Console.WriteLine(j["status"].ToString() == "done"
+    ? j["result"]!.ToString() : $"HATA: {j["error"]}");`,
+
+  "PowerShell": `$base = "${BASE}"
+
+# 1) Dosya ile gönder (base64 yolu)
+$b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("fis.jpg"))
+$body = @{ filename = "fis.jpg"; data = $b64 } | ConvertTo-Json -Compress
+$job = Invoke-RestMethod -Method Post -Uri "$base/api/jobs/base64" \`
+       -ContentType "application/json" -Body $body
+Write-Host "Kuyruk no:" $job.job_id "sıra:" $job.queue_position
+
+# 2) Sonucu bekle
+do {
+    Start-Sleep -Seconds 2
+    $j = Invoke-RestMethod "$base/api/jobs/$($job.job_id)"
+} while ($j.status -in @("queued", "processing"))
+
+if ($j.status -eq "done") {
+    $fis = $j.result
+    Write-Host $fis.vendor_name "-" $fis.grand_total "TL"
+    if ($fis._suspect) { Write-Warning "ŞÜPHELİ - insan kontrolü gerekli" }
+} else {
+    Write-Error $j.error
+}`
+};
+
+const tabsEl = document.getElementById("langTabs");
+const panesEl = document.getElementById("langPanes");
+Object.entries(SAMPLES).forEach(([lang, code], i) => {
+  const btn = document.createElement("button");
+  btn.textContent = lang;
+  btn.className = i === 0 ? "active" : "";
+  btn.addEventListener("click", () => {
+    tabsEl.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+    panesEl.querySelectorAll(".tabpane").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("pane-" + i).classList.add("active");
+  });
+  tabsEl.appendChild(btn);
+
+  const pane = document.createElement("div");
+  pane.className = "tabpane" + (i === 0 ? " active" : "");
+  pane.id = "pane-" + i;
+  pane.appendChild(makeCodebox(lang + " örneği", code));
+  panesEl.appendChild(pane);
+});
+
+function makeCodebox(title, code) {
+  const box = document.createElement("div");
+  box.className = "codebox";
+  const head = document.createElement("div");
+  head.className = "head";
+  const t = document.createElement("span");
+  t.className = "title"; t.textContent = title;
+  const btn = document.createElement("button");
+  btn.className = "copy-btn"; btn.textContent = "📋 Kopyala";
+  const pre = document.createElement("pre");
+  pre.textContent = code;
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      btn.textContent = "✓ Kopyalandı"; btn.classList.add("ok");
+    } catch {
+      // clipboard izni yoksa: seçime düş
+      const r = document.createRange(); r.selectNodeContents(pre);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      btn.textContent = "Seçildi - Ctrl+C";
+    }
+    setTimeout(() => { btn.textContent = "📋 Kopyala"; btn.classList.remove("ok"); }, 2000);
+  });
+  head.append(t, btn);
+  box.append(head, pre);
+  return box;
+}
+</script>
+</body>
+</html>

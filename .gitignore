@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+service_data/
+.venv/
+venv/
+
+# Gerçek sunucu/firma/kart bilgileri — repoya girmez
+*.local.json
+.claude/
